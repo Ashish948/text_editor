@@ -1,37 +1,33 @@
-const express = require('express')
-const http = require('http')
-const { Server } = require('socket.io')
-const cors = require("cors")
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const cors = require("cors");
 
-const app = express()
+const app = express();
 app.use(cors());
+
 const server = http.createServer(app);
 
 const io = new Server(server, {
-    cors: {
-        origin: "*"
-    }
-})
+  cors: {
+    origin: "http://localhost:5173", // Vite frontend
+    methods: ["GET", "POST"],
+  },
+});
 
-app.get('/', (req, res)=>{
-    res.send('server is running');
-})
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
 
-io.on('connection', (socket)=>{
-    console.log('A user connected:', socket.id);
+  socket.on("editor-change", (code) => {
+    console.log(code);
+    socket.broadcast.emit("editor-change", code);
+  });
 
-    socket.on('message', (data)=>{
-        console.log('message recieved', data);
-        io.emit('message', data);
-    })
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});
 
-    socket.on('disconnect', ()=>{
-        console.log('User disconnected', socket.id);
-    })
-
-
-})
-
-server.listen(5000, (req, res)=>{
-    console.log('server listening at port: 5000');
-})
+server.listen(5000, () => {
+  console.log("Backend running on http://localhost:5000");
+});
