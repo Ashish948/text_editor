@@ -3,10 +3,11 @@ import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
-import { socket } from "./client"; 
-function App() {
+import { socket } from "./client";
 
+function App() {
   const [code, setCode] = useState("");
+  const docId = "default-doc";
 
   const bigFontTheme = EditorView.theme({
     "&": {
@@ -15,6 +16,17 @@ function App() {
   });
 
   useEffect(() => {
+    fetch("http://localhost:5000/load")
+      .then((res) => res.json())
+      .then((data) => {
+        setCode(data.content);
+      })
+      .catch((err) => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    socket.emit("join-document", docId);
+
     socket.on("editor-change", (newCode) => {
       setCode(newCode);
     });
@@ -22,79 +34,65 @@ function App() {
     return () => socket.off("editor-change");
   }, []);
 
-  useEffect(() => {
-  fetch("http://localhost:5000/load")
-    .then((res) => res.json())
-    .then((data) => {
-      setCode(data.content);
-    })
-    .catch((err) => console.error(err));
-}, []);
+  const handleSave = async () => {
+    try {
+      await fetch("http://localhost:5000/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content: code }),
+      });
 
-   const handleSave = async () => {
-    console.log("Saved text:", code);
-    socket.emit("editor-change", code);
+      alert("Saved successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Error saving data");
+    }
+  };
+
+  const handleEdit = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/load");
+      const data = await res.json();
+      setCode(data.content);
+      alert("Document loaded!\nStart editing.");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete everything?")) return;
 
     try {
-    const res = await fetch("http://localhost:5000/save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ content: code }),
-    });
+      await fetch("http://localhost:5000/delete-all", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ confirm: "YES" }),
+      });
 
-    const data = await res.json();
-    console.log(data);
-    alert("Saved successfully!");
-  } catch (err) {
-    console.error(err);
-    alert("Error saving data");
-  }
-   };
+      setCode("");
 
-   
-   const handleEdit = async () => {
-    alert("You can start editing");
-  try {
-    const res = await fetch(`http://localhost:5000/load`);
-    const data = await res.json();
-    setCode(data.content);
-    alert("Document loaded for editing!");
-    
+      socket.emit("editor-change", {
+        docId,
+        code: "",
+      });
 
-  } catch (err) {
-    console.error(err);
-  }
-};
-
-
-const handleDelete = async () => {
-
-
-  try {
-
-    const res = await fetch("http://localhost:5000/save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ content: " " }),
-    });
-
-    const data = await res.json();
-    setCode("");
-    socket.emit("editor-change", "");
-    alert("Deleted successfully!");
-  } catch (err) {
-    console.error(err);
-    alert("Error saving data");
-  }
-};
+      alert("Deleted successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting data");
+    }
+  };
 
   return (
     <div style={{ padding: "15px" }}>
-      <h1 className="font-serif text-center text-4xl font-bold my-7">The TEXT EDITOR</h1>
+      <h1 className="font-serif text-center text-4xl font-bold my-7">
+        The TEXT EDITOR
+      </h1>
 
       <div className="flex bg-[rgb(235,233,233)] my-1 py-1 ml-[75%] w-110 justify-evenly rounded-xl">
         <button
@@ -124,12 +122,17 @@ const handleDelete = async () => {
         height="750px"
         theme={oneDark}
         extensions={[javascript({ jsx: true }), bigFontTheme]}
-        onChange={(value) => setCode(value)}
-      />
+        onChange={(value) => {
+          setCode(value);
 
+          socket.emit("editor-change", {
+            docId,
+            code: value,
+          });
+        }}
+      />
     </div>
   );
 }
 
 export default App;
-

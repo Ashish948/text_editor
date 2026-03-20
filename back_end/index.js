@@ -5,11 +5,11 @@ const cors = require("cors");
 const mysql = require("mysql2");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
+
 
 const connection = mysql.createConnection({
   host: "127.0.0.1",
@@ -26,6 +26,7 @@ connection.connect((err) => {
   }
 });
 
+
 app.get("/users", (req, res) => {
   connection.query("SELECT * FROM users", (err, results) => {
     if (err) {
@@ -36,20 +37,6 @@ app.get("/users", (req, res) => {
   });
 });
 
-app.post("/edit", (req, res) => {
-  const { content } = req.body;
-
-  res.json({
-    message: "Edit received",
-    data: content,
-  });
-});
-
-app.delete("/delete", (req, res) => {
-  res.json({
-    message: "Delete route working",
-  });
-});
 
 app.post("/save", (req, res) => {
   const { content } = req.body;
@@ -67,30 +54,9 @@ app.post("/save", (req, res) => {
     }
 
     res.json({
-      message: "✅ Content saved successfully",
+      message: "Content saved successfully",
       id: result.insertId,
     });
-  });
-});
-
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
-  },
-});
-
-io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
-
-  socket.on("editor-change", (code) => {
-    console.log("Code updated");
-    
-    socket.broadcast.emit("editor-change", code);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
   });
 });
 
@@ -112,12 +78,6 @@ app.get("/load", (req, res) => {
 });
 
 
-app.use((req, res) => {
-  res.status(404).json({
-    message: "Route not found",
-  });
-});
-
 app.get("/document/:id", (req, res) => {
   const { id } = req.params;
 
@@ -136,13 +96,18 @@ app.get("/document/:id", (req, res) => {
   });
 });
 
+
 app.put("/update/:id", (req, res) => {
   const { id } = req.params;
   const { content } = req.body;
 
+  if (!content) {
+    return res.status(400).json({ error: "Content is required" });
+  }
+
   const query = "UPDATE documents SET content = ? WHERE id = ?";
 
-  connection.query(query, [content, id], (err, result) => {
+  connection.query(query, [content, id], (err) => {
     if (err) {
       return res.status(500).json({ error: "Update failed" });
     }
@@ -151,21 +116,60 @@ app.put("/update/:id", (req, res) => {
   });
 });
 
-app.delete("/delete/:id", (req, res) => {
-  const { id } = req.params;
 
-  const query = "DELETE FROM documents WHERE id = ?";
+app.delete("/delete-all", (req, res) => {
+  const { confirm } = req.body;
 
-  connection.query(query, [id], (err, result) => {
+  if (confirm !== "YES") {
+    return res.status(400).json({
+      error: "Confirmation required",
+    });
+  }
+
+  const query = "TRUNCATE TABLE documents";
+
+  connection.query(query, (err) => {
     if (err) {
-      return res.status(500).json({ error: "Delete failed" });
+      return res.status(500).json({ error: "Failed to truncate table" });
     }
 
-    res.json({ message: "Document deleted successfully" });
+    res.json({
+      message: "All documents deleted successfully",
+    });
+  });
+});
+
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+  },
+});
+
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+
+  socket.on("join-document", (docId) => {
+    socket.join(docId);
+    console.log(`User joined room: ${docId}`);
+  });
+
+  socket.on("editor-change", ({ docId, code }) => {
+    socket.to(docId).emit("editor-change", code);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});
+
+app.use((req, res) => {
+  res.status(404).json({
+    message: "Route not found",
   });
 });
 
 
 server.listen(5000, () => {
-  console.log("🚀 Server running at http://localhost:5000");
+  console.log("Server running at http://localhost:5000");
 });
